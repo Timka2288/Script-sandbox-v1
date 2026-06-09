@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local SERVER_URL = ""
@@ -54,6 +55,56 @@ local function addCorner(parent, radius)
 end
 
 -- ============================================================
+-- Анимации
+-- ============================================================
+local TWEEN_FAST   = TweenInfo.new(0.18, Enum.EasingStyle.Quad,   Enum.EasingDirection.Out)
+local TWEEN_MED    = TweenInfo.new(0.28, Enum.EasingStyle.Quint,  Enum.EasingDirection.Out)
+local TWEEN_SPRING = TweenInfo.new(0.35, Enum.EasingStyle.Back,   Enum.EasingDirection.Out)
+local TWEEN_BOUNCE = TweenInfo.new(0.40, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+
+local function tweenProp(obj, props, info)
+	TweenService:Create(obj, info or TWEEN_MED, props):Play()
+end
+
+-- Кнопка: при hover расширяется (1.03), при нажатии сжимается (0.97)
+-- Возвращает функцию updateColor(newColor) для динамического обновления цвета
+local function addButtonAnim(btn, normalColor)
+	local origSize = btn.Size
+	local origPos  = btn.Position
+	local currentNormal = normalColor
+
+	local function sizeForFactor(f)
+		local dw = origSize.X.Offset * (f - 1)
+		local dh = origSize.Y.Offset * (f - 1)
+		return
+			UDim2.new(origSize.X.Scale, origSize.X.Offset + dw,
+			          origSize.Y.Scale, origSize.Y.Offset + dh),
+			UDim2.new(origPos.X.Scale,  origPos.X.Offset  - dw * 0.5,
+			          origPos.Y.Scale,  origPos.Y.Offset  - dh * 0.5)
+	end
+
+	btn.MouseEnter:Connect(function()
+		local s, p = sizeForFactor(1.03)
+		tweenProp(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(1,1,1), 0.10), Size = s, Position = p}, TWEEN_FAST)
+	end)
+	btn.MouseLeave:Connect(function()
+		tweenProp(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_FAST)
+	end)
+	btn.MouseButton1Down:Connect(function()
+		local s, p = sizeForFactor(0.97)
+		tweenProp(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(0,0,0), 0.15), Size = s, Position = p}, TWEEN_FAST)
+	end)
+	btn.MouseButton1Up:Connect(function()
+		tweenProp(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_SPRING)
+	end)
+
+	-- Возвращаем функцию для обновления цвета снаружи
+	return function(newColor)
+		currentNormal = newColor
+	end
+end
+
+-- ============================================================
 -- Главное окно
 -- ============================================================
 local MainFrame = Instance.new("Frame")
@@ -63,8 +114,16 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 addCorner(MainFrame, 12)
+
+-- Анимация появления главного окна
+MainFrame.Position = UDim2.new(0.07, 0, -0.1, 0)
+MainFrame.BackgroundTransparency = 1
+task.defer(function()
+	tweenProp(MainFrame, {Position = UDim2.new(0.07, 0, 0.04, 0), BackgroundTransparency = 0}, TWEEN_SPRING)
+end)
 
 local mainScale = Instance.new("UIScale")
 mainScale.Parent = MainFrame
@@ -155,13 +214,16 @@ local collapsed = false
 CollapseBtn.MouseButton1Click:Connect(function()
 	collapsed = not collapsed
 	if collapsed then
-		MainFrame.Size = UDim2.new(0, 360, 0, 52)
+		tweenProp(MainFrame, {Size = UDim2.new(0, 360, 0, 52)}, TWEEN_MED)
+		tweenProp(ContentWrapper, {BackgroundTransparency = 1}, TWEEN_FAST)
 		CollapseBtn.Text = "+"
 	else
-		MainFrame.Size = UDim2.new(0, 360, 0, 480)
+		tweenProp(MainFrame, {Size = UDim2.new(0, 360, 0, 480)}, TWEEN_SPRING)
 		CollapseBtn.Text = "-"
 	end
 end)
+addButtonAnim(CollapseBtn, Color3.fromRGB(40, 40, 55))
+addButtonAnim(CloseBtn,    Color3.fromRGB(180, 35, 35))
 
 -- ============================================================
 -- Хелперы UI
@@ -232,6 +294,7 @@ makeLabel("Адрес сервера:", 8)
 local IpInput = makeInput(34, "")
 local StartBtn = makeButton("ПОДКЛЮЧИТЬСЯ", 84, 48, Color3.fromRGB(0, 175, 105))
 local StatusLabel = makeLabel("Статус: Отключено", 138, Color3.fromRGB(180, 60, 60))
+addButtonAnim(StartBtn, Color3.fromRGB(0, 175, 105))
 
 makeSep(168)
 
@@ -284,6 +347,7 @@ makeSep(256)
 -- ============================================================
 makeLabel("Цвет блока:", 268, Color3.fromRGB(180, 180, 200))
 local ColorPreview = makeButton("Открыть палитру", 292, 48, currentBlockColor)
+local updateColorPreviewAnim = addButtonAnim(ColorPreview, currentBlockColor)
 
 makeSep(346)
 
@@ -354,7 +418,11 @@ for i, axis in ipairs(AXES) do
 			axis=="Y" and -STEP_POS or 0,
 			axis=="Z" and -STEP_POS or 0
 		)
-		selectedPart.Position = selectedPart.Position + delta
+		-- Используем CFrame чтобы не сбрасывать вращение
+		selectedPart.CFrame = selectedPart.CFrame + delta
+		if currentRotHandles and currentRotHandles.Adornee then
+			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
+		end
 		syncBlockToServer(selectedPart)
 	end)
 	bPlus.MouseButton1Click:Connect(function()
@@ -364,7 +432,11 @@ for i, axis in ipairs(AXES) do
 			axis=="Y" and STEP_POS or 0,
 			axis=="Z" and STEP_POS or 0
 		)
-		selectedPart.Position = selectedPart.Position + delta
+		-- Используем CFrame чтобы не сбрасывать вращение
+		selectedPart.CFrame = selectedPart.CFrame + delta
+		if currentRotHandles and currentRotHandles.Adornee then
+			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
+		end
 		syncBlockToServer(selectedPart)
 	end)
 end
@@ -423,6 +495,11 @@ for i, axis in ipairs(AXES) do
 			math.max(0.5, curSize.Y - (axis=="Y" and STEP_SIZE or 0)),
 			math.max(0.5, curSize.Z - (axis=="Z" and STEP_SIZE or 0))
 		)
+		-- Обновляем rotProxy после изменения размера
+		if currentRotHandles and currentRotHandles.Adornee then
+			currentRotHandles.Adornee.Size = selectedPart.Size + Vector3.new(5, 5, 5)
+			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
+		end
 		syncBlockToServer(selectedPart)
 	end)
 	bPlus.MouseButton1Click:Connect(function()
@@ -433,6 +510,11 @@ for i, axis in ipairs(AXES) do
 			curSize.Y + (axis=="Y" and STEP_SIZE or 0),
 			curSize.Z + (axis=="Z" and STEP_SIZE or 0)
 		)
+		-- Обновляем rotProxy после изменения размера
+		if currentRotHandles and currentRotHandles.Adornee then
+			currentRotHandles.Adornee.Size = selectedPart.Size + Vector3.new(5, 5, 5)
+			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
+		end
 		syncBlockToServer(selectedPart)
 	end)
 end
@@ -512,6 +594,12 @@ end
 local SpawnBtn = makeButton("СОЗДАТЬ БЛОК", 754, 48, Color3.fromRGB(190, 90, 0))
 local ClearBtn = makeButton("Очистить все", 808, 48, Color3.fromRGB(100, 25, 25))
 
+addButtonAnim(SpawnBtn,    Color3.fromRGB(190, 90, 0))
+addButtonAnim(ClearBtn,    Color3.fromRGB(100, 25, 25))
+addButtonAnim(SelectBtn,   Color3.fromRGB(30, 100, 180))
+addButtonAnim(DeselectBtn, Color3.fromRGB(55, 55, 70))
+addButtonAnim(DeleteBtn,   Color3.fromRGB(160, 30, 30))
+
 ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 870)
 
 -- ============================================================
@@ -526,6 +614,7 @@ PaletteFrame.Visible = false
 PaletteFrame.Active = true
 PaletteFrame.Draggable = true
 PaletteFrame.ZIndex = 20
+PaletteFrame.ClipsDescendants = true
 PaletteFrame.Parent = ScreenGui
 addCorner(PaletteFrame, 12)
 
@@ -567,8 +656,15 @@ PaletteClose.BorderSizePixel = 0
 PaletteClose.ZIndex = 22
 PaletteClose.Parent = PaletteFrame
 addCorner(PaletteClose, 8)
+addButtonAnim(PaletteClose, Color3.fromRGB(180, 35, 35))
 PaletteClose.MouseButton1Click:Connect(function()
-	PaletteFrame.Visible = false
+	-- Анимация закрытия палитры
+	tweenProp(PaletteFrame, {Size = UDim2.new(0, 300, 0, 0), BackgroundTransparency = 1}, TWEEN_MED)
+	task.delay(0.28, function()
+		PaletteFrame.Visible = false
+		PaletteFrame.Size = UDim2.new(0, 300, 0, 305)
+		PaletteFrame.BackgroundTransparency = 0
+	end)
 	colorPickerOpen = false
 end)
 
@@ -681,6 +777,7 @@ ApplyColorBtn.BorderSizePixel = 0
 ApplyColorBtn.ZIndex = 21
 ApplyColorBtn.Parent = PaletteFrame
 addCorner(ApplyColorBtn, 10)
+addButtonAnim(ApplyColorBtn, Color3.fromRGB(0,175,105))
 
 -- ============================================================
 -- Логика ползунков палитры
@@ -751,7 +848,8 @@ bindSlider(ValTrack, function(t) currentV = t end)
 
 ApplyColorBtn.MouseButton1Click:Connect(function()
 	currentBlockColor = Color3.fromHSV(currentH, currentS, currentV)
-	ColorPreview.BackgroundColor3 = currentBlockColor
+	tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
+	updateColorPreviewAnim(currentBlockColor)
 	if selectedPart then
 		selectedPart.Color = currentBlockColor
 		local cleanId = string.gsub(selectedPart.Name, "SyncBlock_", "")
@@ -774,10 +872,21 @@ end)
 
 ColorPreview.MouseButton1Click:Connect(function()
 	colorPickerOpen = not colorPickerOpen
-	PaletteFrame.Visible = colorPickerOpen
 	if colorPickerOpen then
 		currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
 		updatePaletteColor()
+		-- Анимация открытия палитры
+		PaletteFrame.Size = UDim2.new(0, 300, 0, 0)
+		PaletteFrame.BackgroundTransparency = 1
+		PaletteFrame.Visible = true
+		tweenProp(PaletteFrame, {Size = UDim2.new(0, 300, 0, 305), BackgroundTransparency = 0}, TWEEN_SPRING)
+	else
+		tweenProp(PaletteFrame, {Size = UDim2.new(0, 300, 0, 0), BackgroundTransparency = 1}, TWEEN_MED)
+		task.delay(0.28, function()
+			PaletteFrame.Visible = false
+			PaletteFrame.Size = UDim2.new(0, 300, 0, 305)
+			PaletteFrame.BackgroundTransparency = 0
+		end)
 	end
 end)
 
@@ -840,7 +949,9 @@ local function createHandlesForPart(part)
 	end)
 	moveH.MouseDrag:Connect(function(face, distance)
 		local normal = FACE_TO_NORMAL[face] or Vector3.new(0,0,0)
-		part.Position = startPos + (normal * distance)
+		-- Двигаем через CFrame чтобы сохранить вращение
+		local newCF = CFrame.new(startPos + (normal * distance)) * (part.CFrame - part.CFrame.Position)
+		part.CFrame = newCF
 		if rotProxy then rotProxy.CFrame = part.CFrame end
 	end)
 	moveH.MouseButton1Up:Connect(function()
@@ -862,11 +973,14 @@ local function createHandlesForPart(part)
 	end)
 	sizeH.MouseDrag:Connect(function(face, distance)
 		local normal = FACE_TO_NORMAL[face] or Vector3.new(0,0,0)
-		local delta = normal * distance
+		-- distance всегда >= 0; знак оси задаёт направление грани, но размер только растёт при тяге наружу.
+		-- Используем math.abs(normal) чтобы всегда прибавлять к нужной оси, независимо от знака нормали.
+		local absNormal = Vector3.new(math.abs(normal.X), math.abs(normal.Y), math.abs(normal.Z))
+		local delta = absNormal * distance
 		local newSize = Vector3.new(
-			math.max(0.5, startSize.X + math.abs(delta.X)),
-			math.max(0.5, startSize.Y + math.abs(delta.Y)),
-			math.max(0.5, startSize.Z + math.abs(delta.Z))
+			math.max(0.5, startSize.X + delta.X),
+			math.max(0.5, startSize.Y + delta.Y),
+			math.max(0.5, startSize.Z + delta.Z)
 		)
 		part.Size = newSize
 		if rotProxy then
@@ -946,15 +1060,15 @@ SelectBtn.MouseButton1Click:Connect(function()
 	if not isSyncing then return end
 	selectModeActive = not selectModeActive
 	if selectModeActive then
-		SelectBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
+		tweenProp(SelectBtn, {BackgroundColor3 = Color3.fromRGB(0, 180, 80)}, TWEEN_MED)
 		SelectBtn.Text = "✓ Режим выбора ВКЛ (тапни по блоку)"
+		tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(0, 200, 120)}, TWEEN_FAST)
 		InfoLabel.Text = "Тапни по блоку чтобы выбрать"
-		InfoLabel.TextColor3 = Color3.fromRGB(0, 200, 120)
 	else
-		SelectBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 180)
+		tweenProp(SelectBtn, {BackgroundColor3 = Color3.fromRGB(30, 100, 180)}, TWEEN_MED)
 		SelectBtn.Text = "ВЫБРАТЬ БЛОК (нажми на блок)"
+		tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(100, 100, 130)}, TWEEN_FAST)
 		InfoLabel.Text = "Нажми на блок чтобы выбрать его"
-		InfoLabel.TextColor3 = Color3.fromRGB(100, 100, 130)
 	end
 end)
 
@@ -995,13 +1109,13 @@ UIS.TouchEnded:Connect(function(input, gameProcessed)
 			selectedPart = found
 			createHandlesForPart(selectedPart)
 			InfoLabel.Text = "Выбран: " .. string.sub(selectedPart.Name, 11, 22)
-			InfoLabel.TextColor3 = Color3.fromRGB(0, 200, 120)
+			tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(0, 200, 120)}, TWEEN_FAST)
 			currentBlockColor = selectedPart.Color
-			ColorPreview.BackgroundColor3 = currentBlockColor
+			tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
 			currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
 			updatePaletteColor()
 			selectModeActive = false
-			SelectBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 180)
+			tweenProp(SelectBtn, {BackgroundColor3 = Color3.fromRGB(30, 100, 180)}, TWEEN_MED)
 			SelectBtn.Text = "ВЫБРАТЬ БЛОК (нажми на блок)"
 		end
 	end
@@ -1034,13 +1148,13 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
 			selectedPart = found
 			createHandlesForPart(found)
 			InfoLabel.Text = "Выбран: " .. string.sub(found.Name, 11, 22)
-			InfoLabel.TextColor3 = Color3.fromRGB(0, 200, 120)
+			tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(0, 200, 120)}, TWEEN_FAST)
 			currentBlockColor = found.Color
-			ColorPreview.BackgroundColor3 = currentBlockColor
+			tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
 			currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
 			updatePaletteColor()
 			selectModeActive = false
-			SelectBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 180)
+			tweenProp(SelectBtn, {BackgroundColor3 = Color3.fromRGB(30, 100, 180)}, TWEEN_MED)
 			SelectBtn.Text = "ВЫБРАТЬ БЛОК (нажми на блок)"
 		end
 	end
@@ -1050,7 +1164,7 @@ DeselectBtn.MouseButton1Click:Connect(function()
 	destroyHandles()
 	selectedPart = nil
 	InfoLabel.Text = "Нажми на блок чтобы выбрать его"
-	InfoLabel.TextColor3 = Color3.fromRGB(100, 100, 130)
+	tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(100, 100, 130)}, TWEEN_FAST)
 end)
 
 DeleteBtn.MouseButton1Click:Connect(function()
@@ -1078,7 +1192,7 @@ DeleteBtn.MouseButton1Click:Connect(function()
 		})
 	end)
 	InfoLabel.Text = "Блок удалён"
-	InfoLabel.TextColor3 = Color3.fromRGB(200, 80, 80)
+	tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(200, 80, 80)}, TWEEN_FAST)
 end)
 
 -- ============================================================
@@ -1249,10 +1363,11 @@ StartBtn.MouseButton1Click:Connect(function()
 		SERVER_URL = ip
 		isSyncing = true
 		startSynchronization()
+		tweenProp(StartBtn, {BackgroundColor3 = Color3.fromRGB(175, 30, 30)}, TWEEN_MED)
 		StartBtn.Text = "ОТКЛЮЧИТЬСЯ"
-		StartBtn.BackgroundColor3 = Color3.fromRGB(175, 30, 30)
+		addButtonAnim(StartBtn, Color3.fromRGB(175, 30, 30))
+		tweenProp(StatusLabel, {TextColor3 = Color3.fromRGB(0, 220, 120)}, TWEEN_MED)
 		StatusLabel.Text = "Статус: Подключено — " .. IpInput.Text
-		StatusLabel.TextColor3 = Color3.fromRGB(0, 220, 120)
 	else
 		isSyncing = false
 		destroyHandles()
@@ -1261,12 +1376,13 @@ StartBtn.MouseButton1Click:Connect(function()
 		table.clear(remotePlayersMarkers)
 		table.clear(spawnedBlocks)
 		selectedPart = nil
+		tweenProp(StartBtn, {BackgroundColor3 = Color3.fromRGB(0, 175, 105)}, TWEEN_MED)
 		StartBtn.Text = "ПОДКЛЮЧИТЬСЯ"
-		StartBtn.BackgroundColor3 = Color3.fromRGB(0, 175, 105)
+		addButtonAnim(StartBtn, Color3.fromRGB(0, 175, 105))
+		tweenProp(StatusLabel, {TextColor3 = Color3.fromRGB(180, 60, 60)}, TWEEN_MED)
 		StatusLabel.Text = "Статус: Отключено"
-		StatusLabel.TextColor3 = Color3.fromRGB(180, 60, 60)
 		InfoLabel.Text = "Нажми на блок чтобы выбрать его"
-		InfoLabel.TextColor3 = Color3.fromRGB(100, 100, 130)
+		tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(100, 100, 130)}, TWEEN_MED)
 	end
 end)
 
