@@ -1,0 +1,62 @@
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# Хранилища данных в оперативной памяти
+players_data = {}
+blocks_data = {}
+
+@app.route('/update', methods=['POST'])
+def update_position():
+    data = request.json
+    username = data.get("username")
+    position = data.get("position")
+    if username and position:
+        players_data[username] = position
+        return jsonify({"status": "success", "players": players_data}), 200
+    return jsonify({"status": "error"}), 400
+
+@app.route('/spawn_block', methods=['POST'])
+def spawn_block():
+    data = request.json
+    block_id = data.get("id")
+    block_info = data.get("info")
+    if block_id and block_info:
+        blocks_data[block_id] = block_info
+        return jsonify({"status": "success"}), 200
+    return jsonify({"status": "error"}), 400
+
+@app.route('/update_block', methods=['POST'])
+def update_block():
+    data = request.json
+    block_id = data.get("id")
+    updates = data.get("updates")
+    
+    if block_id and block_id in blocks_data:
+        for key, value in updates.items():
+            blocks_data[block_id][key] = value
+        return jsonify({"status": "success"}), 200
+    return jsonify({"status": "error"}), 400
+
+@app.route('/delete_block', methods=['POST'])
+def delete_block():
+    data = request.json
+    block_id = data.get("id")
+    
+    if block_id and block_id in blocks_data:
+        del blocks_data[block_id] # Удаляем блок из словаря
+        return jsonify({"status": "success", "message": f"Block {block_id} deleted"}), 200
+    return jsonify({"status": "error", "message": "Block not found"}), 404
+
+@app.route('/get_blocks', methods=['GET'])
+def get_blocks():
+    return jsonify(blocks_data), 200
+
+@app.route('/clear_blocks', methods=['POST'])
+def clear_blocks():
+    blocks_data.clear()
+    return jsonify({"status": "success"}), 200
+
+if __name__ == '__main__':
+    # Сервер слушает все адреса на порту 5000
+    app.run(host='0.0.0.0', port=5000)
