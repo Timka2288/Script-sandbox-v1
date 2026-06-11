@@ -24,9 +24,8 @@ local currentRotHandles = nil
 local colorPickerOpen = false
 local toggleSymScale = false
 
--- Touch-select: защита от случайного выбора при повороте камеры
 local touchStartPos = nil
-local TOUCH_MOVE_THRESHOLD = 12  -- пикселей, чтобы отличить тап от свайпа
+local TOUCH_MOVE_THRESHOLD = 12
 
 local FACE_TO_NORMAL = {
 	[Enum.NormalId.Top]    = Vector3.new(0, 1, 0),
@@ -40,6 +39,7 @@ local FACE_TO_NORMAL = {
 -- ============================================================
 -- GUI SETUP
 -- ============================================================
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SandboxV1"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -58,6 +58,7 @@ end
 -- ============================================================
 -- Анимации
 -- ============================================================
+
 local TWEEN_FAST   = TweenInfo.new(0.18, Enum.EasingStyle.Quad,   Enum.EasingDirection.Out)
 local TWEEN_MED    = TweenInfo.new(0.28, Enum.EasingStyle.Quint,  Enum.EasingDirection.Out)
 local TWEEN_SPRING = TweenInfo.new(0.35, Enum.EasingStyle.Back,   Enum.EasingDirection.Out)
@@ -67,12 +68,11 @@ local function tweenProp(obj, props, info)
 	TweenService:Create(obj, info or TWEEN_MED, props):Play()
 end
 
--- Кнопка: при hover расширяется (1.03), при нажатии сжимается (0.97)
--- Возвращает функцию updateColor(newColor) для динамического обновления цвета
 local function addButtonAnim(btn, normalColor)
 	local origSize = btn.Size
 	local origPos  = btn.Position
 	local currentNormal = normalColor
+	local activeTween = nil
 
 	local function sizeForFactor(f)
 		local dw = origSize.X.Offset * (f - 1)
@@ -84,32 +84,43 @@ local function addButtonAnim(btn, normalColor)
 			          origPos.Y.Scale,  origPos.Y.Offset  - dh * 0.5)
 	end
 
+	local function playTween(obj, props, info)
+		if activeTween then activeTween:Cancel() end
+		local t = TweenService:Create(obj, info or TWEEN_MED, props)
+		activeTween = t
+		t:Play()
+	end
+
 	btn.MouseEnter:Connect(function()
 		local s, p = sizeForFactor(1.03)
-		tweenProp(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(1,1,1), 0.10), Size = s, Position = p}, TWEEN_FAST)
+		playTween(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(1,1,1), 0.10), Size = s, Position = p}, TWEEN_FAST)
 	end)
 	btn.MouseLeave:Connect(function()
-		tweenProp(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_FAST)
+		playTween(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_FAST)
 	end)
 	btn.MouseButton1Down:Connect(function()
 		local s, p = sizeForFactor(0.97)
-		tweenProp(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(0,0,0), 0.15), Size = s, Position = p}, TWEEN_FAST)
+		playTween(btn, {BackgroundColor3 = currentNormal:Lerp(Color3.new(0,0,0), 0.15), Size = s, Position = p}, TWEEN_FAST)
 	end)
 	btn.MouseButton1Up:Connect(function()
-		tweenProp(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_SPRING)
+		playTween(btn, {BackgroundColor3 = currentNormal, Size = origSize, Position = origPos}, TWEEN_SPRING)
 	end)
 
 	return function(newColor)
 		currentNormal = newColor
+		if activeTween then activeTween:Cancel() end
+		btn.BackgroundColor3 = newColor
 	end
 end
 
 -- ============================================================
 -- Главное окно
 -- ============================================================
+
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 360, 0, 480)
-MainFrame.Position = UDim2.new(0.07, 0, 0.04, 0)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.08, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -118,11 +129,10 @@ MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 addCorner(MainFrame, 12)
 
--- Анимация появления главного окна
-MainFrame.Position = UDim2.new(0.07, 0, -0.1, 0)
+MainFrame.Position = UDim2.new(0.5, 0, -0.15, 0)
 MainFrame.BackgroundTransparency = 1
-task.defer(function()
-	tweenProp(MainFrame, {Position = UDim2.new(0.07, 0, 0.04, 0), BackgroundTransparency = 0}, TWEEN_SPRING)
+task.delay(0.1, function()
+	tweenProp(MainFrame, {Position = UDim2.new(0.5, 0, 0.08, 0), BackgroundTransparency = 0}, TWEEN_SPRING)
 end)
 
 local mainScale = Instance.new("UIScale")
@@ -136,10 +146,10 @@ local function updateMainScale()
 	scale = math.clamp(scale, 0.65, 1.4)
 	mainScale.Scale = scale
 end
+
 updateMainScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateMainScale)
 
--- Акцентная полоска
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 4)
 TopBar.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
@@ -147,7 +157,6 @@ TopBar.BorderSizePixel = 0
 TopBar.Parent = MainFrame
 addCorner(TopBar, 2)
 
--- Заголовок
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -90, 0, 46)
 Title.Position = UDim2.new(0, 10, 0, 4)
@@ -159,7 +168,6 @@ Title.BackgroundTransparency = 1
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = MainFrame
 
--- Кнопка свернуть
 local CollapseBtn = Instance.new("TextButton")
 CollapseBtn.Size = UDim2.new(0, 40, 0, 40)
 CollapseBtn.Position = UDim2.new(1, -88, 0, 7)
@@ -172,7 +180,6 @@ CollapseBtn.BorderSizePixel = 0
 CollapseBtn.Parent = MainFrame
 addCorner(CollapseBtn, 8)
 
--- Кнопка закрыть ✖️
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 40, 0, 40)
 CloseBtn.Position = UDim2.new(1, -44, 0, 7)
@@ -185,9 +192,6 @@ CloseBtn.BorderSizePixel = 0
 CloseBtn.Parent = MainFrame
 addCorner(CloseBtn, 8)
 
--- CloseBtn логика подключается ниже, после объявления destroyHandles
-
--- Контейнер для контента
 local ContentWrapper = Instance.new("Frame")
 ContentWrapper.Size = UDim2.new(1, 0, 1, -52)
 ContentWrapper.Position = UDim2.new(0, 0, 0, 52)
@@ -195,7 +199,6 @@ ContentWrapper.BackgroundTransparency = 1
 ContentWrapper.ClipsDescendants = true
 ContentWrapper.Parent = MainFrame
 
--- ScrollingFrame с полоской 4px
 local ScrollFrame = Instance.new("ScrollingFrame")
 ScrollFrame.Size = UDim2.new(1, 0, 1, 0)
 ScrollFrame.Position = UDim2.new(0, 0, 0, 0)
@@ -228,6 +231,7 @@ addButtonAnim(CloseBtn,    Color3.fromRGB(180, 35, 35))
 -- ============================================================
 -- Хелперы UI
 -- ============================================================
+
 local function makeLabel(text, customY, color, parent)
 	local p = parent or ContentFrame
 	local l = Instance.new("TextLabel")
@@ -290,6 +294,7 @@ end
 -- ============================================================
 -- Подключение
 -- ============================================================
+
 makeLabel("Адрес сервера:", 8)
 local IpInput = makeInput(34, "")
 local StartBtn = makeButton("ПОДКЛЮЧИТЬСЯ", 84, 48, Color3.fromRGB(0, 175, 105))
@@ -299,8 +304,9 @@ addButtonAnim(StartBtn, Color3.fromRGB(0, 175, 105))
 makeSep(168)
 
 -- ============================================================
--- Формы (полные названия)
+-- Формы
 -- ============================================================
+
 makeLabel("Форма блока:", 180, Color3.fromRGB(180, 180, 200))
 
 local ShapeFrame = Instance.new("Frame")
@@ -345,6 +351,7 @@ makeSep(256)
 -- ============================================================
 -- Цвет
 -- ============================================================
+
 makeLabel("Цвет блока:", 268, Color3.fromRGB(180, 180, 200))
 local ColorPreview = makeButton("Открыть палитру", 292, 48, currentBlockColor)
 local updateColorPreviewAnim = addButtonAnim(ColorPreview, currentBlockColor)
@@ -354,6 +361,7 @@ makeSep(346)
 -- ============================================================
 -- Управление блоком
 -- ============================================================
+
 local SelectBtn    = makeButton("ВЫБРАТЬ БЛОК (нажми на блок)", 358, 48, Color3.fromRGB(30, 100, 180))
 local DeselectBtn  = makeButton("❌ Отменить выбор блока", 412, 40, Color3.fromRGB(55, 55, 70))
 local DeleteBtn    = makeButton("🗑  Удалить выбранный блок",   458, 44, Color3.fromRGB(160, 30, 30))
@@ -418,7 +426,6 @@ for i, axis in ipairs(AXES) do
 			axis=="Y" and -STEP_POS or 0,
 			axis=="Z" and -STEP_POS or 0
 		)
-		-- Используем CFrame чтобы не сбрасывать вращение
 		selectedPart.CFrame = selectedPart.CFrame + delta
 		if currentRotHandles and currentRotHandles.Adornee then
 			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
@@ -432,7 +439,6 @@ for i, axis in ipairs(AXES) do
 			axis=="Y" and STEP_POS or 0,
 			axis=="Z" and STEP_POS or 0
 		)
-		-- Используем CFrame чтобы не сбрасывать вращение
 		selectedPart.CFrame = selectedPart.CFrame + delta
 		if currentRotHandles and currentRotHandles.Adornee then
 			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
@@ -495,7 +501,6 @@ for i, axis in ipairs(AXES) do
 			math.max(0.5, curSize.Y - (axis=="Y" and STEP_SIZE or 0)),
 			math.max(0.5, curSize.Z - (axis=="Z" and STEP_SIZE or 0))
 		)
-		-- Обновляем rotProxy после изменения размера
 		if currentRotHandles and currentRotHandles.Adornee then
 			currentRotHandles.Adornee.Size = selectedPart.Size + Vector3.new(5, 5, 5)
 			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
@@ -510,7 +515,6 @@ for i, axis in ipairs(AXES) do
 			curSize.Y + (axis=="Y" and STEP_SIZE or 0),
 			curSize.Z + (axis=="Z" and STEP_SIZE or 0)
 		)
-		-- Обновляем rotProxy после изменения размера
 		if currentRotHandles and currentRotHandles.Adornee then
 			currentRotHandles.Adornee.Size = selectedPart.Size + Vector3.new(5, 5, 5)
 			currentRotHandles.Adornee.CFrame = selectedPart.CFrame
@@ -522,6 +526,7 @@ end
 -- ============================================================
 -- Вращение блока
 -- ============================================================
+
 makeLabel("Вращение (градусы):", 678, Color3.fromRGB(180, 180, 200))
 
 local RotFrame = Instance.new("Frame")
@@ -605,6 +610,7 @@ ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 870)
 -- ============================================================
 -- ЦВЕТОВАЯ ПАЛИТРА
 -- ============================================================
+
 local PaletteFrame = Instance.new("Frame")
 PaletteFrame.Size = UDim2.new(0, 300, 0, 305)
 PaletteFrame.Position = UDim2.new(0.35, 0, 0.2, 0)
@@ -629,6 +635,7 @@ local function updatePaletteScale()
 	scale = math.clamp(scale, 0.6, 1.3)
 	palScale.Scale = scale
 end
+
 updatePaletteScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updatePaletteScale)
 
@@ -657,8 +664,8 @@ PaletteClose.ZIndex = 22
 PaletteClose.Parent = PaletteFrame
 addCorner(PaletteClose, 8)
 addButtonAnim(PaletteClose, Color3.fromRGB(180, 35, 35))
+
 PaletteClose.MouseButton1Click:Connect(function()
-	-- Анимация закрытия палитры
 	tweenProp(PaletteFrame, {Size = UDim2.new(0, 300, 0, 0), BackgroundTransparency = 1}, TWEEN_MED)
 	task.delay(0.28, function()
 		PaletteFrame.Visible = false
@@ -782,6 +789,7 @@ addButtonAnim(ApplyColorBtn, Color3.fromRGB(0,175,105))
 -- ============================================================
 -- Логика ползунков палитры
 -- ============================================================
+
 local currentH, currentS, currentV = 0, 1, 1
 
 local function updatePaletteColor()
@@ -848,7 +856,6 @@ bindSlider(ValTrack, function(t) currentV = t end)
 
 ApplyColorBtn.MouseButton1Click:Connect(function()
 	currentBlockColor = Color3.fromHSV(currentH, currentS, currentV)
-	tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
 	updateColorPreviewAnim(currentBlockColor)
 	if selectedPart then
 		selectedPart.Color = currentBlockColor
@@ -873,9 +880,9 @@ end)
 ColorPreview.MouseButton1Click:Connect(function()
 	colorPickerOpen = not colorPickerOpen
 	if colorPickerOpen then
-		currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
+		local openColor = (selectedPart and selectedPart.Color) or currentBlockColor
+		currentH, currentS, currentV = Color3.toHSV(openColor)
 		updatePaletteColor()
-		-- Анимация открытия палитры
 		PaletteFrame.Size = UDim2.new(0, 300, 0, 0)
 		PaletteFrame.BackgroundTransparency = 1
 		PaletteFrame.Visible = true
@@ -893,6 +900,7 @@ end)
 -- ============================================================
 -- HANDLES, синхронизация, кнопки
 -- ============================================================
+
 function syncBlockToServer(part)
 	local cleanId = string.gsub(part.Name, "SyncBlock_", "")
 	local pos = part.Position
@@ -948,7 +956,6 @@ local function createHandlesForPart(part)
 		startPos = part.Position
 	end)
 	moveH.MouseDrag:Connect(function(face, distance)
-		-- Вычисляем нормаль грани в мировом пространстве через CFrame блока
 		local localNormal = FACE_TO_NORMAL[face] or Vector3.new(0,0,0)
 		local worldNormal = part.CFrame:VectorToWorldSpace(localNormal).Unit
 		local newPos = startPos + worldNormal * distance
@@ -978,7 +985,6 @@ local function createHandlesForPart(part)
 		local normal = FACE_TO_NORMAL[face] or Vector3.new(0,0,0)
 		local absNormal = Vector3.new(math.abs(normal.X), math.abs(normal.Y), math.abs(normal.Z))
 		if toggleSymScale then
-			-- Симметрично: delta удваивается (рост в обе стороны), центр не двигается
 			local delta = absNormal * distance * 2
 			local newSize = Vector3.new(
 				math.max(0.5, startSize.X + delta.X),
@@ -988,7 +994,6 @@ local function createHandlesForPart(part)
 			part.Size = newSize
 			part.CFrame = CFrame.new(startPos) * part.CFrame.Rotation
 		else
-			-- Односторонне: центр сдвигается вслед за тянутой гранью на половину роста
 			local delta = absNormal * distance
 			local newSize = Vector3.new(
 				math.max(0.5, startSize.X + delta.X),
@@ -1073,6 +1078,7 @@ end)
 -- ============================================================
 -- ВЫБОР БЛОКА КАСАНИЕМ
 -- ============================================================
+
 local selectModeActive = false
 
 SelectBtn.MouseButton1Click:Connect(function()
@@ -1130,7 +1136,7 @@ UIS.TouchEnded:Connect(function(input, gameProcessed)
 			InfoLabel.Text = "Выбран: " .. string.sub(selectedPart.Name, 11, 22)
 			tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(0, 200, 120)}, TWEEN_FAST)
 			currentBlockColor = selectedPart.Color
-			tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
+			updateColorPreviewAnim(currentBlockColor)
 			currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
 			updatePaletteColor()
 			selectModeActive = false
@@ -1169,7 +1175,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
 			InfoLabel.Text = "Выбран: " .. string.sub(found.Name, 11, 22)
 			tweenProp(InfoLabel, {TextColor3 = Color3.fromRGB(0, 200, 120)}, TWEEN_FAST)
 			currentBlockColor = found.Color
-			tweenProp(ColorPreview, {BackgroundColor3 = currentBlockColor}, TWEEN_MED)
+			updateColorPreviewAnim(currentBlockColor)
 			currentH, currentS, currentV = Color3.toHSV(currentBlockColor)
 			updatePaletteColor()
 			selectModeActive = false
@@ -1217,6 +1223,7 @@ end)
 -- ============================================================
 -- СИНХРОНИЗАЦИЯ СЕТИ
 -- ============================================================
+
 local SHAPE_TO_PARTTYPE = {
 	Cube     = Enum.PartType.Block,
 	Cylinder = Enum.PartType.Cylinder,
@@ -1336,6 +1343,7 @@ end
 -- ============================================================
 -- КНОПКИ
 -- ============================================================
+
 SpawnBtn.MouseButton1Click:Connect(function()
 	if not isSyncing or not LocalPlayer.Character then return end
 	local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1410,6 +1418,7 @@ updatePaletteColor()
 -- ============================================================
 -- ЗАМОРОЗКА КАМЕРЫ
 -- ============================================================
+
 local cameraFrozen = false
 local frozenCFrame = nil
 
@@ -1433,16 +1442,26 @@ end)
 
 -- ============================================================
 -- ПАНЕЛЬ НАСТРОЕК
--- Размеры только через Scale (0..1), без Offset пикселей —
--- UIScale от основного окна масштабирует на все устройства
 -- ============================================================
-local SETTINGS_W = 360   -- базовая ширина (та же что MainFrame)
-local SETTINGS_H = 460   -- высота: увеличим для скрола
+
+local SETTINGS_W = 360
+local SETTINGS_H = 460
+
+local SettingsBackdrop = Instance.new("Frame")
+SettingsBackdrop.Size = UDim2.new(1, 0, 1, 0)
+SettingsBackdrop.Position = UDim2.new(0, 0, 0, 0)
+SettingsBackdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+SettingsBackdrop.BackgroundTransparency = 1
+SettingsBackdrop.BorderSizePixel = 0
+SettingsBackdrop.ZIndex = 29
+SettingsBackdrop.Visible = false
+SettingsBackdrop.Parent = ScreenGui
 
 local SettingsFrame = Instance.new("Frame")
 SettingsFrame.Size = UDim2.fromOffset(SETTINGS_W, SETTINGS_H)
-SettingsFrame.Position = UDim2.new(0.07, 0, 0.04, 0)
-SettingsFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+SettingsFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+SettingsFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+SettingsFrame.BackgroundColor3 = Color3.fromRGB(32, 34, 48)
 SettingsFrame.BorderSizePixel = 0
 SettingsFrame.Visible = false
 SettingsFrame.Active = true
@@ -1452,7 +1471,6 @@ SettingsFrame.ClipsDescendants = true
 SettingsFrame.Parent = ScreenGui
 addCorner(SettingsFrame, 12)
 
--- Тот же UIScale что у главного окна
 local settingsScale = Instance.new("UIScale")
 settingsScale.Parent = SettingsFrame
 
@@ -1462,10 +1480,10 @@ local function updateSettingsScale()
 	local scale = math.clamp(desiredWidth / SETTINGS_W, 0.65, 1.4)
 	settingsScale.Scale = scale
 end
+
 updateSettingsScale()
 workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateSettingsScale)
 
--- Акцентная полоска
 local SettingsTopBar = Instance.new("Frame")
 SettingsTopBar.Size = UDim2.new(1, 0, 0, 4)
 SettingsTopBar.BackgroundColor3 = Color3.fromRGB(100, 60, 220)
@@ -1474,7 +1492,6 @@ SettingsTopBar.ZIndex = 31
 SettingsTopBar.Parent = SettingsFrame
 addCorner(SettingsTopBar, 2)
 
--- Заголовок
 local SettingsTitle = Instance.new("TextLabel")
 SettingsTitle.Size = UDim2.new(1, -90, 0, 46)
 SettingsTitle.Position = UDim2.new(0, 10, 0, 4)
@@ -1487,10 +1504,9 @@ SettingsTitle.TextXAlignment = Enum.TextXAlignment.Left
 SettingsTitle.ZIndex = 31
 SettingsTitle.Parent = SettingsFrame
 
--- Кнопка закрыть — ТОЧНО такая же как CollapseBtn/CloseBtn в главном окне
 local SettingsCloseBtn = Instance.new("TextButton")
 SettingsCloseBtn.Size = UDim2.new(0, 40, 0, 40)
-SettingsCloseBtn.Position = UDim2.new(1, -44, 0, 6)
+SettingsCloseBtn.Position = UDim2.new(1, -44, 0, 7)
 SettingsCloseBtn.Text = "✖️"
 SettingsCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 SettingsCloseBtn.TextSize = 18
@@ -1502,7 +1518,6 @@ SettingsCloseBtn.Parent = SettingsFrame
 addCorner(SettingsCloseBtn, 8)
 addButtonAnim(SettingsCloseBtn, Color3.fromRGB(180, 35, 35))
 
--- Контейнер + скроллинг
 local SettingsContentWrapper = Instance.new("Frame")
 SettingsContentWrapper.Size = UDim2.new(1, 0, 1, -52)
 SettingsContentWrapper.Position = UDim2.new(0, 0, 0, 52)
@@ -1519,12 +1534,11 @@ SettingsScroll.ScrollBarThickness = 4
 SettingsScroll.ScrollBarImageColor3 = Color3.fromRGB(100, 60, 220)
 SettingsScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 SettingsScroll.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
-SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 300) -- растёт по мере добавления настроек
+SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 300)
 SettingsScroll.ZIndex = 31
 SettingsScroll.Parent = SettingsContentWrapper
 
--- Вспомогательная: создать строку-тумблер в скролле
-local settingsRowY = 8  -- текущая Y позиция следующего элемента
+local settingsRowY = 8
 
 local function makeSettingsSection(labelText)
 	local lbl = Instance.new("TextLabel")
@@ -1538,8 +1552,8 @@ local function makeSettingsSection(labelText)
 	lbl.TextXAlignment = Enum.TextXAlignment.Left
 	lbl.ZIndex = 32
 	lbl.Parent = SettingsScroll
-	settingsRowY = settingsRowY + 28
-	-- разделитель
+	settingsRowY = settingsRowY + 22
+
 	local sep = Instance.new("Frame")
 	sep.Size = UDim2.new(0, 340, 0, 1)
 	sep.Position = UDim2.new(0, 10, 0, settingsRowY)
@@ -1551,30 +1565,42 @@ local function makeSettingsSection(labelText)
 	settingsRowY = settingsRowY + 8
 end
 
--- Функция добавления тумблера (переиспользуемая для будущих настроек)
 local function makeToggleRow(icon, title, sub, defaultVal, onChanged)
+	local ROW_HEIGHT = 56       
+	local ROW_GAP = 8           
+	local PADDING_LEFT = 10
+	local ICON_SIZE = 32
+	local TEXT_LEFT = 52
+	local TOGGLE_RIGHT = -60
+	local TOGGLE_WIDTH = 48
+	local TOGGLE_HEIGHT = 26
+	local TEXT_WIDTH = (340 + TOGGLE_RIGHT) - TEXT_LEFT - 10
+
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(0, 340, 0, 64)
+	row.Size = UDim2.new(0, 340, 0, ROW_HEIGHT)
 	row.Position = UDim2.new(0, 10, 0, settingsRowY)
-	row.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+	row.BackgroundColor3 = Color3.fromRGB(42, 44, 62)
 	row.BorderSizePixel = 0
 	row.ZIndex = 32
+	row.ClipsDescendants = true
 	row.Parent = SettingsScroll
 	addCorner(row, 10)
 
 	local ico = Instance.new("TextLabel")
-	ico.Size = UDim2.new(0, 36, 0, 36)
-	ico.Position = UDim2.new(0, 10, 0, 14)
+	ico.Size = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
+	ico.Position = UDim2.new(0, PADDING_LEFT, 0.5, -ICON_SIZE/2)
 	ico.Text = icon
 	ico.TextSize = 20
+	ico.TextColor3 = Color3.fromRGB(220, 220, 235)
 	ico.BackgroundTransparency = 1
 	ico.ZIndex = 33
 	ico.Font = Enum.Font.Gotham
 	ico.Parent = row
 
+	-- Заголовок поднят выше
 	local lbl = Instance.new("TextLabel")
-	lbl.Size = UDim2.new(1, -110, 0, 22)
-	lbl.Position = UDim2.new(0, 52, 0, 10)
+	lbl.Size = UDim2.new(0, TEXT_WIDTH, 0, 18)
+	lbl.Position = UDim2.new(0, TEXT_LEFT, 0, 4)
 	lbl.Text = title
 	lbl.TextColor3 = Color3.fromRGB(220, 220, 235)
 	lbl.Font = Enum.Font.GothamBold
@@ -1584,43 +1610,45 @@ local function makeToggleRow(icon, title, sub, defaultVal, onChanged)
 	lbl.ZIndex = 33
 	lbl.Parent = row
 
+	-- Описание вплотную к заголовку (зазор 1px)
 	local sublbl = Instance.new("TextLabel")
-	sublbl.Size = UDim2.new(1, -110, 0, 18)
-	sublbl.Position = UDim2.new(0, 52, 0, 32)
+	sublbl.Size = UDim2.new(0, TEXT_WIDTH, 0, 28)
+	sublbl.Position = UDim2.new(0, TEXT_LEFT, 0, 23)
 	sublbl.Text = sub
-	sublbl.TextColor3 = Color3.fromRGB(110, 110, 140)
+	sublbl.TextColor3 = Color3.fromRGB(150, 150, 175)
 	sublbl.Font = Enum.Font.Gotham
 	sublbl.TextSize = 12
 	sublbl.BackgroundTransparency = 1
 	sublbl.TextXAlignment = Enum.TextXAlignment.Left
+	sublbl.TextWrapped = true
 	sublbl.ZIndex = 33
 	sublbl.Parent = row
 
 	local tbg = Instance.new("TextButton")
-	tbg.Size = UDim2.new(0, 52, 0, 28)
-	tbg.Position = UDim2.new(1, -62, 0, 18)
+	tbg.Size = UDim2.new(0, TOGGLE_WIDTH, 0, TOGGLE_HEIGHT)
+	tbg.Position = UDim2.new(1, TOGGLE_RIGHT, 0.5, -TOGGLE_HEIGHT/2)
 	tbg.Text = ""
 	tbg.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
 	tbg.BorderSizePixel = 0
 	tbg.ZIndex = 34
 	tbg.Parent = row
-	addCorner(tbg, 14)
+	addCorner(tbg, 13)
 
 	local knob = Instance.new("Frame")
-	knob.Size = UDim2.new(0, 22, 0, 22)
+	knob.Size = UDim2.new(0, 20, 0, 20)
 	knob.Position = UDim2.new(0, 3, 0, 3)
 	knob.BackgroundColor3 = Color3.fromRGB(140, 140, 160)
 	knob.BorderSizePixel = 0
 	knob.ZIndex = 35
 	knob.Parent = tbg
-	addCorner(knob, 11)
+	addCorner(knob, 10)
 
 	local state = defaultVal or false
 
 	local function applyToggleVisual(val)
 		if val then
 			TweenService:Create(tbg,  TWEEN_MED,    {BackgroundColor3 = Color3.fromRGB(0, 200, 120)}):Play()
-			TweenService:Create(knob, TWEEN_SPRING,  {Position = UDim2.new(0, 27, 0, 3), BackgroundColor3 = Color3.fromRGB(255,255,255)}):Play()
+			TweenService:Create(knob, TWEEN_SPRING,  {Position = UDim2.new(0, 25, 0, 3), BackgroundColor3 = Color3.fromRGB(255,255,255)}):Play()
 			TweenService:Create(lbl,  TWEEN_FAST,    {TextColor3 = Color3.fromRGB(0, 220, 130)}):Play()
 		else
 			TweenService:Create(tbg,  TWEEN_MED,    {BackgroundColor3 = Color3.fromRGB(50, 50, 70)}):Play()
@@ -1636,32 +1664,29 @@ local function makeToggleRow(icon, title, sub, defaultVal, onChanged)
 	end)
 
 	applyToggleVisual(state)
-	settingsRowY = settingsRowY + 72  -- 64 строка + 8 отступ
+
+	settingsRowY = settingsRowY + ROW_HEIGHT + ROW_GAP
 	SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, settingsRowY + 8)
 
 	return function() return state end
 end
 
--- ============================================================
--- Наполнение настроек
--- ============================================================
 makeSettingsSection("Камера")
 
 local toggleCamFreeze = false
 
-makeToggleRow("🎥", "Заморозить камеру", "при перемещении блока", false, function(val)
+makeToggleRow("🎥", "Заморозить камеру", "при перемещении, масштабировании, вращении блока", false, function(val)
 	toggleCamFreeze = val
 	cameraFrozen = val
 	if not val then unfreezeCamera() end
 end)
 
+makeSettingsSection("Билдинг")
+
 makeToggleRow("⇔", "Симметричное масштабирование", "блок растёт в обе стороны", false, function(val)
 	toggleSymScale = val
 end)
 
--- ============================================================
--- Логика закрытия/открытия (анимация идентична CollapseBtn)
--- ============================================================
 local settingsVisible = false
 
 local function openSettings()
@@ -1670,18 +1695,22 @@ local function openSettings()
 	SettingsFrame.Size = UDim2.fromOffset(SETTINGS_W, 52)
 	SettingsFrame.BackgroundTransparency = 1
 	SettingsFrame.Visible = true
-	tweenProp(SettingsFrame, {Size = UDim2.fromOffset(SETTINGS_W, SETTINGS_H), BackgroundTransparency = 0}, TWEEN_SPRING)
+	SettingsBackdrop.Visible = true
+	SettingsBackdrop.BackgroundTransparency = 1
+	tweenProp(SettingsFrame,   {Size = UDim2.fromOffset(SETTINGS_W, SETTINGS_H), BackgroundTransparency = 0}, TWEEN_SPRING)
+	tweenProp(SettingsBackdrop, {BackgroundTransparency = 0.55}, TWEEN_MED)
 end
 
 local function closeSettings()
 	settingsVisible = false
-	-- Скрываем контент и шапку сразу — они торчат при схлопывании
 	SettingsContentWrapper.Visible = false
 	SettingsTitle.Visible = false
 	SettingsCloseBtn.Visible = false
-	tweenProp(SettingsFrame, {Size = UDim2.fromOffset(SETTINGS_W, 0), BackgroundTransparency = 1}, TWEEN_MED)
+	tweenProp(SettingsFrame,   {Size = UDim2.fromOffset(SETTINGS_W, 0), BackgroundTransparency = 1}, TWEEN_MED)
+	tweenProp(SettingsBackdrop, {BackgroundTransparency = 1}, TWEEN_MED)
 	task.delay(0.3, function()
 		SettingsFrame.Visible = false
+		SettingsBackdrop.Visible = false
 		SettingsFrame.Size = UDim2.fromOffset(SETTINGS_W, SETTINGS_H)
 		SettingsFrame.BackgroundTransparency = 0
 		SettingsContentWrapper.Visible = true
@@ -1692,9 +1721,6 @@ end
 
 SettingsCloseBtn.MouseButton1Click:Connect(closeSettings)
 
--- ============================================================
--- КНОПКА ⚙ В ГЛАВНОМ ОКНЕ
--- ============================================================
 local SettingsBtn = Instance.new("TextButton")
 SettingsBtn.Size = UDim2.new(0, 40, 0, 40)
 SettingsBtn.Position = UDim2.new(1, -132, 0, 7)
@@ -1713,9 +1739,7 @@ SettingsBtn.MouseButton1Click:Connect(function()
 	if settingsVisible then closeSettings() else openSettings() end
 end)
 
--- ============================================================
--- ИНТЕГРАЦИЯ ЗАМОРОЗКИ В HANDLES
--- ============================================================
+-- Перехват создания ручек для заморозки камеры
 local _origCreateHandles = createHandlesForPart
 createHandlesForPart = function(part)
 	_origCreateHandles(part)
